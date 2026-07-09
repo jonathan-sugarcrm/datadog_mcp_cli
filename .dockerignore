@@ -1,0 +1,4 @@
+# Keep the build context tiny — the Dockerfile fetches the binary itself, so
+# nothing local needs to be sent to the daemon.
+*
+!Dockerfile

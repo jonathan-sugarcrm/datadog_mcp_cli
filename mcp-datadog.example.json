@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "datadog": {
+      "command": "/home/jrawlinson/datadog_mcp_cli/dd-mcp-proxy.sh",
+      "args": [],
+      "env": {
+        "DD_SITE": "us1"
+      }
+    }
+  }
+}
