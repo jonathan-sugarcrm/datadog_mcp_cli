@@ -1,6 +1,3 @@
-// mcp-gateway-core is stdio-only (CORE-01..03); HTTP transport / per-request
-// header auth is a different slice (mcp-gateway-http) and is out of scope
-// here, so this config has no transport switch.
 export function loadConfig(env = process.env) {
   const apiKey = env.GATEWAY_API_KEY;
   if (!apiKey) {
@@ -21,12 +18,20 @@ export function loadConfig(env = process.env) {
     apiKey,
     // The key the local launcher must present, checked once at startup
     // against apiKey, before the backend connection or server transport
-    // starts (CORE-01).
+    // starts (CORE-01). Only meaningful for the stdio transport.
     clientKey: env.GATEWAY_CLIENT_KEY,
     allowlist,
     backendCommand: env.BACKEND_COMMAND ?? 'datadog_mcp_cli',
     backendArgs: env.BACKEND_ARGS
       ? env.BACKEND_ARGS.split(' ').filter(Boolean)
       : ['--site', env.DD_SITE ?? 'us1'],
+    // Selects which server transport index.js wires up (mcp-gateway-http
+    // §7): 'stdio' (default) or 'http'. Any other value falls back to
+    // stdio rather than silently doing nothing.
+    transport: env.MCP_TRANSPORT === 'http' ? 'http' : 'stdio',
+    // HTTP listen port (HTTP transport only). No default is assumed (§7
+    // documents none for PORT, unlike MCP_TRANSPORT) — left as whatever the
+    // caller passed, including undefined.
+    port: env.PORT,
   };
 }

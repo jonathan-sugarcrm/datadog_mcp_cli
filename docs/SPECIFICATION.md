@@ -56,8 +56,8 @@ cloud-hosted service (HTTP transport), from the same image/config schema.
 | `mcp-gateway-http` | The same gateway is reachable over HTTP with the same auth/allowlist semantics. | `mcp-gateway-core` |
 | `mcp-gateway-packaging` | Documented local Docker run + standalone hosted container instructions for the same image. | `mcp-gateway-http` |
 
-`mcp-gateway-core` is done (AC1–AC5 verified PASS). This pass targets
-**`mcp-gateway-http`**.
+`mcp-gateway-core` and `mcp-gateway-http` are done (AC1–AC5 and AC6 verified
+PASS). This pass targets **`mcp-gateway-packaging`**.
 
 ## 4. Architecture & wiring
 
@@ -85,6 +85,18 @@ cloud-hosted service (HTTP transport), from the same image/config schema.
   comes up to serve requests at all, so there is no server-transport error
   object to return — the "rejection" is the process refusing to start,
   observed as no MCP response ever arriving (§9.1 AC3).
+- **HTTP wiring (established by `mcp-gateway-http`):** the credential is
+  presented as `Authorization: Bearer <key>` on the single route `POST /mcp`;
+  a request whose credential is missing or mismatched gets `HTTP 401` before
+  the request body is parsed or handed to the MCP layer (no backend
+  contact). Each HTTP request gets a fresh MCP `Server` + stateless
+  `StreamableHTTPServerTransport` pair — cheap, since tool
+  listing/allowlist logic is stateless — so that rejecting one request never
+  affects a later valid request on the same process; the one genuinely
+  expensive, stateful resource (`backendClient`, the connection to the
+  Datadog backend) is still created once per process and shared across
+  requests. None of these choices (header name, route, status code) is
+  depended on by any contract or other slice — they are two-way doors.
 
 ## 5. Deployment model
 
@@ -111,10 +123,13 @@ cloud-hosted service (HTTP transport), from the same image/config schema.
   (§9 AC3) therefore means the process never comes up to serve requests.
   This is a one-way-door choice for stdio integrators, made now rather than
   left open, because a per-call parameter has no natural place in a
-  single-session stdio pipe. Over HTTP (`mcp-gateway-http`, later slice),
-  the credential is presented per-request in a header and checked on every
-  request, since HTTP has an obvious per-call channel and multiple callers
-  may share one running process.
+  single-session stdio pipe. Over HTTP (established by `mcp-gateway-http`),
+  the credential is presented per-request as an `Authorization: Bearer <key>`
+  header, checked against `GATEWAY_API_KEY` before the request body is
+  parsed or handed to the MCP layer; a missing/mismatched credential gets
+  `HTTP 401` and the backend is never contacted for that request. Multiple
+  callers may share one running process, and rejecting one request does not
+  affect a later valid request on the same process (§9.1 AC6).
 - The Datadog credential never leaves the gateway process; callers only ever
   see the gateway's own tool responses.
 - Logs record tool name, timestamp, and outcome only — never a caller
@@ -169,8 +184,9 @@ cloud-hosted service (HTTP transport), from the same image/config schema.
 
 ## 9. Acceptance criteria
 
-Restated from the issue; slice `mcp-gateway-core` covers AC1–AC5. AC6–AC8
-belong to later slices (`mcp-gateway-http`, `mcp-gateway-packaging`).
+Restated from the issue; slice `mcp-gateway-core` covers AC1–AC5 (verified
+PASS) and slice `mcp-gateway-http` covers AC6 (verified PASS). AC7–AC8
+belong to the remaining slice (`mcp-gateway-packaging`).
 
 1. **AC1** — Given a client sends a valid shared API key, when it calls a
    tool present in the deployment's allowlist, then the gateway forwards the
@@ -195,11 +211,11 @@ belong to later slices (`mcp-gateway-http`, `mcp-gateway-packaging`).
    hosted service using the same env-var configuration schema.
    (`mcp-gateway-packaging`)
 
-### 9.1 Verification methods established by `mcp-gateway-core`
+### 9.1 Verification methods established by `mcp-gateway-core` and `mcp-gateway-http`
 
-These sharpen AC1–AC5 from prose into the bounded checks actually proven for
-this slice, and are the baseline future slices' verification should match
-or exceed:
+These sharpen AC1–AC6 from prose into the bounded checks actually proven for
+each slice, and are the baseline later slices' verification should match or
+exceed:
 
 - **AC1/AC2** — verified structurally: an allowed call's caller-visible
   response must equal the backend's own response with no transformation,
@@ -216,10 +232,36 @@ or exceed:
   grepping it literally for every secret value and a caller-identity
   marker, asserting zero matches, across all three `outcome` values
   (`success`/`failure`/`rejected`, §6).
+- **AC6** — verified via three sharpened checks over HTTP
+  (`mcp-gateway-http`): (a) HTTP-AC1: a valid-credential, allowlisted call's
+  caller-visible response must equal the backend's own response with no
+  transformation (same structural-equality bar as AC1), and the backend is
+  invoked exactly once; (b) HTTP-AC2: a missing/mismatched credential is
+  rejected with `HTTP 401` before the backend is contacted, checked
+  per-request rather than once at launch (unlike stdio's AC3) — proven by
+  rejecting on one request and then succeeding with a valid credential on a
+  *later* request on the same running process; (c) HTTP-AC3: a disallowed
+  tool is rejected with a standard JSON-RPC error object (top-level
+  `error.code`/`error.message`, not a bespoke HTTP shape) with the backend
+  invocation count staying at zero, and `tools/list` returns the same
+  allowlist-filtered set across ≥2 calls in one run (same stability bar as
+  AC4). **Known non-blocking gap:** HTTP-AC1's "no allowlist configured"
+  precondition branch was exercised only transitively over HTTP (via the
+  shared `filterTools`/`buildGatewayServer` code path, already covered by
+  unit tests and by `mcp-gateway-core`'s stdio AC1 test), not by a dedicated
+  HTTP integration test. Logged here rather than silently dropped; does not
+  change AC6's verified-PASS status, since the stated method for HTTP-AC1
+  requires only a valid credential + allowlisted-tool call over HTTP, which
+  was reproduced directly.
 
 ## 10. Open questions
 
 None — cleared during story refinement (see issue #1 discussion). No new
-product decisions were surfaced by `mcp-gateway-core`'s implementation or
-verification; every discovery was a Class 2/3 fact or safe choice, folded
-into §4/§6/§8/§9 above rather than left as an open question.
+product decisions were surfaced by `mcp-gateway-core`'s or
+`mcp-gateway-http`'s implementation or verification; every discovery —
+including `mcp-gateway-http`'s Class 3 choices (credential header name,
+HTTP route, rejection status code, per-request isolation strategy) and its
+one non-blocking evidence gap (HTTP-AC1's untested "no allowlist" branch,
+§9.1 AC6) — was a Class 2/3 fact, a two-way-door implementation choice, or a
+documented known gap, folded into §4/§6/§9.1 above rather than left as an
+open question.
