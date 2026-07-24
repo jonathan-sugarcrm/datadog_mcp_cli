@@ -1,0 +1,26 @@
+slice: mcp-gateway-http
+requirements:
+  - id: HTTP-AC1
+    result: pass
+    evidence:
+      - test: "HTTP-AC1: a valid, allowlisted HTTP call is forwarded and the response is structurally identical to the backend's own (gateway/test/http.test.js, ok 11)"
+      - command: "cd gateway && npm test"
+  - id: HTTP-AC2
+    result: pass
+    evidence:
+      - test: "HTTP-AC2: a request with no credential gets HTTP 401 and never reaches the backend (gateway/test/http.test.js, ok 8)"
+      - test: "HTTP-AC2: a request with a mismatched credential gets HTTP 401 and never reaches the backend (gateway/test/http.test.js, ok 9)"
+      - test: "HTTP-AC2: rejection of one request does not affect a later valid request on the same process (gateway/test/http.test.js, ok 10)"
+      - command: "cd gateway && npm test"
+      - command: "curl -s -i -X POST http://127.0.0.1:<port>/mcp -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'  # no Authorization header -> raw HTTP/1.1 401 Unauthorized, body {\"error\":\"unauthorized\"}, calls-log stayed empty"
+      - command: "curl -s -i -X POST http://127.0.0.1:<port>/mcp -H 'Content-Type: application/json' -H 'authorization: expected-secret' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'  # missing Bearer prefix -> raw HTTP/1.1 401, calls-log stayed empty"
+      - command: "curl -s -i -X POST http://127.0.0.1:<port>/mcp -H 'Content-Type: application/json' -H 'authorization: Bearer wrong' -d 'not even json'  # wrong credential + unparseable body -> raw HTTP/1.1 401, proving the 401 fires before body/method parsing (method-independent), calls-log stayed empty"
+      - command: "curl -s -i -X POST http://127.0.0.1:<port>/mcp -H 'Content-Type: application/json' -H 'accept: application/json, text/event-stream' -H 'authorization: Bearer expected-secret' -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",...}'  # valid credential on the same running process after two prior rejections -> raw HTTP/1.1 200 OK with normal initialize result"
+  - id: HTTP-AC3
+    result: pass
+    evidence:
+      - test: "HTTP-AC3: a disallowed tool call over HTTP is rejected with a standard MCP/JSON-RPC error, backend never invoked (gateway/test/http.test.js, ok 12)"
+      - test: "HTTP-AC3: tools/list returns the same allowlist-filtered set on every call for the life of the process (gateway/test/http.test.js, ok 13)"
+      - command: "cd gateway && npm test"
+      - command: "curl -s -i -X POST http://127.0.0.1:<port>/mcp -H 'Content-Type: application/json' -H 'accept: application/json, text/event-stream' -H 'authorization: Bearer expected-secret' -d '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"delete_monitor\",\"arguments\":{}}}'  # statelessly, no prior initialize -> raw wire body {\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-32601,\"message\":\"MCP error -32601: Tool not available: delete_monitor\"}}, calls-log stayed empty"
+overall: pass

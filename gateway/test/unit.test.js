@@ -35,3 +35,18 @@ test('filterTools restricts to the allowlisted names', () => {
   const tools = [{ name: 'a' }, { name: 'b' }, { name: 'c' }];
   assert.deepEqual(filterTools(tools, new Set(['a', 'c'])), [{ name: 'a' }, { name: 'c' }]);
 });
+
+test('loadConfig defaults to the stdio transport', () => {
+  const config = loadConfig({ GATEWAY_API_KEY: 'k' });
+  assert.equal(config.transport, 'stdio');
+});
+
+test('loadConfig selects the http transport only for MCP_TRANSPORT=http', () => {
+  assert.equal(loadConfig({ GATEWAY_API_KEY: 'k', MCP_TRANSPORT: 'http' }).transport, 'http');
+  assert.equal(loadConfig({ GATEWAY_API_KEY: 'k', MCP_TRANSPORT: 'something-else' }).transport, 'stdio');
+});
+
+test('loadConfig passes PORT through with no invented default', () => {
+  assert.equal(loadConfig({ GATEWAY_API_KEY: 'k' }).port, undefined);
+  assert.equal(loadConfig({ GATEWAY_API_KEY: 'k', PORT: '4000' }).port, '4000');
+});
