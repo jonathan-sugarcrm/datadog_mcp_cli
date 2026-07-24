@@ -1,0 +1,10 @@
+# Keep the build context to what the Dockerfile actually needs: the
+# lockfile/manifest (npm ci) and the app source. Everything else —
+# dependencies, tests, VCS metadata — is either reinstalled in-image or
+# irrelevant to the build.
+*
+
+!package.json
+!package-lock.json
+!src
+!src/**

@@ -1,0 +1,22 @@
+slice: mcp-gateway-packaging
+requirements:
+  - id: PKG-01
+    result: pass
+    evidence:
+      - command: "docker build --no-cache -t datadog-mcp-gateway-verify:nocache -f gateway/Dockerfile gateway  # exit 0, real curl fetch + sha256sum --check --strict pass, image sha256:d6485c2cd4794d43c519c82b366352a30ab8731a9522a5b08afddf743f039324"
+      - command: "docker run --rm -i -e GATEWAY_API_KEY=expected-secret -e GATEWAY_CLIENT_KEY=expected-secret -e BACKEND_COMMAND=node -e BACKEND_ARGS=/app/mock-backend.js -v <fixture>:/app/mock-backend.js:ro --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=128 --memory=256m datadog-mcp-gateway-verify:nocache  # real MCP Client/StdioClientTransport initialize+tools/list+tools/call -> SERVER_INFO/TOOLS_LIST/TOOLS_CALL_RESULT all valid, non-error"
+      - command: "docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=128 --memory=256m datadog-mcp-gateway-verify:nocache < /dev/null  # missing GATEWAY_API_KEY: exit 1, stdout 0 bytes, stderr-only error"
+      - command: "real MCP Client.connect() (StdioClientTransport spawning docker run --rm -i datadog-mcp-gateway-verify:nocache, no GATEWAY_API_KEY) with a 5000ms bound -> rejected in 853ms with 'MCP error -32000: Connection closed', no MCP response ever produced"
+      - command: "docker build --no-cache --build-arg SHA256_AMD64=0000000000000000000000000000000000000000000000000000000000000000 -f gateway/Dockerfile gateway  # build-time failure path reproduced (not just docs-checked): real curl fetch of the real binary, sha256sum --check --strict reports 'FAILED', BuildKit aborts, process exit code 1 (verified separately from the piped-log exit status)"
+      - command: "docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m --entrypoint node datadog-mcp-gateway-verify:nocache -e '<write probe>' against /home/node/.config, .local/share, .cache -> WRITE_OK for all three, proving the self-caught XDG/--read-only fix (VOLUME [\"/home/node\"]) actually works; a VOLUME-stripped Dockerfile variant reproduced the original defect (EROFS) under the identical probe, confirming the fix is load-bearing"
+  - id: PKG-02
+    result: pass
+    evidence:
+      - command: "docker inspect --format '{{.Id}}' datadog-mcp-gateway-verify:nocache  # sha256:d6485c2cd4794d43c519c82b366352a30ab8731a9522a5b08afddf743f039324, identical to PKG-01's build digest; no rebuild"
+      - command: "docker run -d --rm -e GATEWAY_API_KEY=standalone-secret -e MCP_TRANSPORT=http -e PORT=8080 -e BACKEND_COMMAND=node -e BACKEND_ARGS=/app/mock-backend.js -v <fixture>:/app/mock-backend.js:ro -p 18080:8080 datadog-mcp-gateway-verify:nocache; docker inspect --format '{{.Image}}' <cid>  # sha256:d6485c2c... matches the tag's Id byte-for-byte"
+      - api_response: "StreamableHTTPClientTransport real initialize+tools/list+tools/call over http://localhost:18080/mcp with Authorization: Bearer standalone-secret -> SERVER_INFO/TOOLS_LIST/TOOLS_CALL_RESULT structurally identical to the mock backend's own response and to PKG-01's own TOOLS_CALL_RESULT"
+      - command: "curl -i -X POST http://localhost:18080/mcp -H 'Authorization: Bearer wrong-secret' ...  # raw HTTP/1.1 401 Unauthorized, {\"error\":\"unauthorized\"}"
+      - command: "curl -i -X POST http://localhost:18080/mcp  # Authorization header omitted entirely -> same raw HTTP/1.1 401 Unauthorized, {\"error\":\"unauthorized\"}"
+      - api_response: "re-ran the valid-credential HTTP client against the same still-running process after both 401s -> identical SERVER_INFO/TOOLS_LIST/TOOLS_CALL_RESULT, proving isolation (one caller's rejection does not affect a later valid request)"
+      - command: "docker run --rm -e MCP_TRANSPORT=http -e PORT=8080 datadog-mcp-gateway-verify:nocache  # no GATEWAY_API_KEY: exit 1, stdout 0 bytes, stderr 'Error: GATEWAY_API_KEY is required...', identical shape to PKG-01's stdio failure path"
+overall: pass
