@@ -1,0 +1,15 @@
+{
+  "name": "datadog-mcp-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared-secret MCP gateway that proxies a subset of Datadog MCP tools using a centrally held Datadog credential.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js test/**/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}
