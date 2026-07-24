@@ -1,0 +1,21 @@
+slice: mcp-gateway-core
+requirements:
+  - id: CORE-01
+    result: pass
+    evidence:
+      - test: "node --test test/stdio-auth.test.js (re-run standalone: 4/4 pass)"
+      - command: "npm test (re-run full suite: 17/17 pass, includes stdio-auth.test.js)"
+      - command: "manual: launch gateway subprocess with missing/mismatched GATEWAY_CLIENT_KEY via a real MCP Client.connect(); observed connect() rejects within the 5s bound and the backend marker file is never written"
+  - id: CORE-02
+    result: pass
+    evidence:
+      - test: "node --test test/gateway.integration.test.js (re-run standalone: 6/6 pass)"
+      - command: "npm test (re-run full suite: 17/17 pass, includes gateway.integration.test.js)"
+      - static_analysis: "read gateway/src/gateway.js CallToolRequestSchema handler: forwarded calls return the backend result with no transformation (const result = await backendClient.callTool(...); return result;), and the allowlist check throws McpError before backendClient is invoked at all"
+  - id: CORE-03
+    result: pass
+    evidence:
+      - test: "node --test test/core03-logging.test.js (re-run standalone: 1/1 pass, raw stderr shows exactly one success/failure/rejected entry each, secret/caller-identity scan returns zero matches)"
+      - command: "npm test (re-run full suite: 17/17 pass, includes core03-logging.test.js)"
+      - static_analysis: "grep -rn 'console\\.|process\\.stdout' gateway/src -> no matches, confirming log lines can never reach the stdout MCP channel"
+overall: pass
