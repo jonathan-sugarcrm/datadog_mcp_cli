@@ -129,9 +129,21 @@ docker run --rm \
   -e DD_API_KEY=<your Datadog API key> \
   -e DD_APP_KEY=<your Datadog application key> \
   -e DD_SITE=us1 \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  --pids-limit=128 \
+  --memory=256m \
   -p 8080:8080 \
   datadog-mcp-gateway:latest
 ```
+
+The same hardening flags as the stdio example above apply here too — the
+image's writable XDG home (`VOLUME ["/home/node"]`) works identically under
+either transport, so there is no reason to run the HTTP case less hardened
+than the stdio case just because the flags aren't required for the HTTP
+transport itself to function.
 
 Over HTTP, the shared secret travels per-request as
 `Authorization: Bearer <GATEWAY_API_KEY>` — there is no separate

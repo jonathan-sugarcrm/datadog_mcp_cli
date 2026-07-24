@@ -35,20 +35,20 @@ whose `downloader` stage re-ran the real `curl` fetch against
 `https://coterm.datadoghq.com/mcp-cli/...` and passed `sha256sum --check --strict` against
 the pinned hash, live in this session — not merely re-asserted from a cached layer).
 
-## 2b. Non-blocking observation: hardening-flag asymmetry between the two documented run examples
+## 2b. Non-blocking observation: hardening-flag asymmetry between the two documented run examples (fixed on request)
 
-`gateway/README.md`'s stdio run example includes `--read-only`, `--tmpfs`, `--cap-drop=ALL`,
+`gateway/README.md`'s stdio run example included `--read-only`, `--tmpfs`, `--cap-drop=ALL`,
 `--security-opt=no-new-privileges`, `--pids-limit`, and `--memory`; the HTTP run example
-includes none of them. This is **not** a PKG-02/C4 violation — C4 governs the image and the
+included none of them. This was **not** a PKG-02/C4 violation — C4 governs the image and the
 environment-variable configuration schema, and these are `docker run` isolation flags, not
-env vars or image contents. Checked, not assumed: re-ran the PKG-02 `docker run` command with
-the same hardening flags added (`--read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m
---cap-drop=ALL --security-opt=no-new-privileges --pids-limit=128 --memory=256m`) — a real
-`POST /mcp` `initialize` request against it returned `HTTP/1.1 200 OK` with a normal MCP
-result, identical in shape to the unhardened PKG-02 run. The same image/XDG setup that makes
-`--read-only` safe for stdio works identically for HTTP. Logged here as a documentation
-observation, not routed as a defect, since it doesn't change any criterion's observable
-outcome — but the README could adopt the same hardening flags for its HTTP example too.
+env vars or image contents. Checked, not assumed, before fixing: re-ran the PKG-02
+`docker run` command with the same hardening flags added — a real `POST /mcp` `initialize`
+request against it returned `HTTP/1.1 200 OK` with a normal MCP result, identical in shape to
+the unhardened PKG-02 run (the same image/XDG setup that makes `--read-only` safe for stdio
+works identically for HTTP). Since this was a real, if non-blocking, doc-quality gap, the
+README's HTTP run example was updated to add the same hardening flags, and the updated
+command was re-verified end-to-end (rebuilt image, real HTTP `initialize` call, `200 OK`)
+before committing.
 
 ## 3. Regressions
 
