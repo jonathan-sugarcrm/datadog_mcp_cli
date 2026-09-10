@@ -14,14 +14,6 @@ DD_SITE="${DD_SITE:-us1}"   # one of: us1 eu1 us3 us5 ap1 ap2 staging
 DD_API_KEY_REF="${DD_API_KEY_REF:-op://Employee/DATADOG_API/DD_API_KEY}"
 DD_APP_KEY_REF="${DD_APP_KEY_REF:-op://Employee/DATADOG_API/DD_APP_KEY}"
 
-# Temporary diagnostic logging to trace where startup time goes.
-# TODO: remove once the /mcp connect-timeout issue is root-caused.
-DEBUG_LOG="${DD_MCP_DEBUG_LOG:-$HOME/.local/state/dd-mcp-proxy-debug.log}"
-mkdir -p "$(dirname "$DEBUG_LOG")" 2>/dev/null || true
-log() { printf '%s [pid %s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$$" "$1" >>"$DEBUG_LOG" 2>/dev/null || true; }
-
-log "start: PATH=$PATH"
-
 if command -v op >/dev/null 2>&1; then
   OP_BIN="op"
 elif command -v op.exe >/dev/null 2>&1; then
@@ -30,26 +22,19 @@ elif command -v op.exe >/dev/null 2>&1; then
   # to wrap `docker run` — instead just read the two secret values with it.
   OP_BIN="op.exe"
 else
-  log "error: op/op.exe not found"
   echo "dd-mcp-proxy: 1Password CLI ('op' or 'op.exe') not found in PATH" >&2
   exit 1
 fi
-log "using OP_BIN=$OP_BIN"
 
-log "resolving DD_API_KEY"
 DD_API_KEY="$("$OP_BIN" read "$DD_API_KEY_REF")"
-log "resolved DD_API_KEY"
-
-log "resolving DD_APP_KEY"
 DD_APP_KEY="$("$OP_BIN" read "$DD_APP_KEY_REF")"
-log "resolved DD_APP_KEY"
-
 export DD_API_KEY DD_APP_KEY
 
-log "launching docker run"
-docker run --rm -i \
+exec docker run --rm -i \
   --env DD_API_KEY \
   --env DD_APP_KEY \
+  --sysctl net.ipv6.conf.all.disable_ipv6=1 \
+  --sysctl net.ipv6.conf.default.disable_ipv6=1 \
   --read-only \
   --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   --cap-drop=ALL \
@@ -57,6 +42,3 @@ docker run --rm -i \
   --pids-limit=128 \
   --memory=256m \
   "$IMAGE" --site "$DD_SITE" "$@"
-STATUS=$?
-log "docker run exited: $STATUS"
-exit "$STATUS"
