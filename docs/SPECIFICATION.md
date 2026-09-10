@@ -56,8 +56,9 @@ cloud-hosted service (HTTP transport), from the same image/config schema.
 | `mcp-gateway-http` | The same gateway is reachable over HTTP with the same auth/allowlist semantics. | `mcp-gateway-core` |
 | `mcp-gateway-packaging` | Documented local Docker run + standalone hosted container instructions for the same image. | `mcp-gateway-http` |
 
-`mcp-gateway-core` and `mcp-gateway-http` are done (AC1–AC5 and AC6 verified
-PASS). This pass targets **`mcp-gateway-packaging`**.
+`mcp-gateway-core`, `mcp-gateway-http`, and `mcp-gateway-packaging` are all
+done (AC1–AC5, AC6, and AC7–AC8 verified PASS). The slice backlog is now
+**fully complete — no slice remains**.
 
 ## 4. Architecture & wiring
 
@@ -97,6 +98,17 @@ PASS). This pass targets **`mcp-gateway-packaging`**.
   Datadog backend) is still created once per process and shared across
   requests. None of these choices (header name, route, status code) is
   depended on by any contract or other slice — they are two-way doors.
+- **Packaging (established by `mcp-gateway-packaging`):** `gateway/Dockerfile`
+  builds a single image with a `downloader` stage that `curl`-fetches the
+  real `datadog_mcp_cli` binary and verifies it against a pinned
+  `SHA256_AMD64` build arg via `sha256sum --check --strict` before it is
+  copied into the final stage — the binary is embedded directly in the
+  image, not fetched or built at container-run time. There is no
+  docker-in-docker: the gateway's child-process spawn of `datadog_mcp_cli`
+  (§4 above) is a plain OS-level `execve` of the embedded binary inside the
+  same container, not a nested container launch. A pinned-hash mismatch
+  aborts the build itself (`docker build` exits non-zero) rather than
+  surfacing at runtime.
 
 ## 5. Deployment model
 
@@ -185,8 +197,9 @@ PASS). This pass targets **`mcp-gateway-packaging`**.
 ## 9. Acceptance criteria
 
 Restated from the issue; slice `mcp-gateway-core` covers AC1–AC5 (verified
-PASS) and slice `mcp-gateway-http` covers AC6 (verified PASS). AC7–AC8
-belong to the remaining slice (`mcp-gateway-packaging`).
+PASS), slice `mcp-gateway-http` covers AC6 (verified PASS), and slice
+`mcp-gateway-packaging` covers AC7–AC8 (verified PASS). All three slices in
+the §3.3 backlog are now complete.
 
 1. **AC1** — Given a client sends a valid shared API key, when it calls a
    tool present in the deployment's allowlist, then the gateway forwards the
@@ -253,15 +266,54 @@ exceed:
   change AC6's verified-PASS status, since the stated method for HTTP-AC1
   requires only a valid credential + allowlisted-tool call over HTTP, which
   was reproduced directly.
+- **AC7/AC8** — verified via two sharpened checks (`mcp-gateway-packaging`,
+  criteria PKG-01/PKG-02): (a) PKG-01 — a genuine `docker build --no-cache`
+  from scratch exits 0 and produces a working image, proven by driving a
+  real MCP client over stdio with the README's documented run command
+  (verbatim hardening flags: `--read-only`/`--tmpfs`/`--cap-drop=ALL`/etc.)
+  to a non-error `initialize`/`tools/call` response; the failure paths are
+  both covered — a missing `GATEWAY_API_KEY` at runtime yields a bounded,
+  timed race showing no MCP response is ever produced (matching AC3's
+  method above), and a tampered pinned-`SHA256_AMD64` build arg aborts
+  `docker build` itself (non-zero exit) via `sha256sum --check --strict`,
+  not merely a docs-level assertion that the check exists; (b) PKG-02 — the
+  *same image digest* (confirmed byte-for-byte via `docker inspect`, not
+  assumed) is run standalone with `MCP_TRANSPORT=http`, and a real
+  `POST /mcp` exchange returns a response structurally equal to the
+  backend's own, over the identical image used for PKG-01 — proving "same
+  image, only secret injection/transport env differ" (C4) rather than
+  assuming it; failure paths cover a missing/mismatched `Authorization:
+  Bearer` credential (`HTTP 401` before backend contact, with isolation
+  confirmed across requests on the same process) and a missing
+  `GATEWAY_API_KEY` at HTTP startup (same fail-fast-to-stderr/non-zero-exit
+  shape as PKG-01's stdio path). **Known non-blocking gap:** the
+  README's HTTP run example omits the hardening flags
+  (`--read-only`/`--tmpfs`/`--cap-drop=ALL`/`--security-opt=no-new-
+  privileges`/`--pids-limit`/`--memory`) present in the stdio example.
+  Confirmed by verification to make no behavioural difference — the same
+  hardened flags were re-run against the HTTP transport and returned an
+  identical, valid `initialize` response — so this is a documentation
+  completeness gap, not a C4 violation or an AC7/AC8 defect. Left as a
+  known minor gap rather than routed as a fix, since resolving it means
+  editing `gateway/README.md`, not this spec.
 
 ## 10. Open questions
 
 None — cleared during story refinement (see issue #1 discussion). No new
-product decisions were surfaced by `mcp-gateway-core`'s or
-`mcp-gateway-http`'s implementation or verification; every discovery —
-including `mcp-gateway-http`'s Class 3 choices (credential header name,
-HTTP route, rejection status code, per-request isolation strategy) and its
+product decisions were surfaced by `mcp-gateway-core`'s, `mcp-gateway-http`'s,
+or `mcp-gateway-packaging`'s implementation or verification; every discovery
+— including `mcp-gateway-http`'s Class 3 choices (credential header name,
+HTTP route, rejection status code, per-request isolation strategy), its
 one non-blocking evidence gap (HTTP-AC1's untested "no allowlist" branch,
-§9.1 AC6) — was a Class 2/3 fact, a two-way-door implementation choice, or a
+§9.1 AC6), `mcp-gateway-packaging`'s architecture fact (the embedded,
+pinned-SHA256 `datadog_mcp_cli` binary with no docker-in-docker, §4), and
+its one non-blocking documentation-completeness gap (the README's HTTP run
+example omitting the hardening flags shown in its stdio example, §9.1
+AC7/AC8) — was a Class 2/3 fact, a two-way-door implementation choice, or a
 documented known gap, folded into §4/§6/§9.1 above rather than left as an
 open question.
+
+The slice backlog (§3.3) is now fully complete: `mcp-gateway-core`,
+`mcp-gateway-http`, and `mcp-gateway-packaging` have all been implemented
+and independently verified PASS (AC1–AC8, no classified failures). No
+slice remains in the backlog.
