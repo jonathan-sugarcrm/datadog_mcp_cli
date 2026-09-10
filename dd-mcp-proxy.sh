@@ -3,31 +3,38 @@
 # Launches the hardened datadog_mcp_cli container as an MCP stdio server,
 # authenticating with Datadog API keys (no interactive OAuth).
 #
-# Secrets are read from a KEY=VALUE file (default ~/.secrets/dd_api.env) but
-# ONLY the two Datadog keys are forwarded into the container — any other
-# secrets that might be in the file are deliberately NOT passed through.
+# Secrets are pulled live from 1Password — no plaintext secrets file on
+# disk. Only the two Datadog keys are forwarded into the container.
 #
 set -euo pipefail
 
 IMAGE="${DD_MCP_IMAGE:-datadog_mcp_cli:hardened}"
-SECRETS_FILE="${DD_SECRETS_FILE:-$HOME/.secrets/dd_api.env}"
 DD_SITE="${DD_SITE:-us1}"   # one of: us1 eu1 us3 us5 ap1 ap2 staging
 
-[ -r "$SECRETS_FILE" ] || { echo "dd-mcp-proxy: cannot read secrets file: $SECRETS_FILE" >&2; exit 1; }
+DD_API_KEY_REF="${DD_API_KEY_REF:-op://Employee/DATADOG_API/DD_API_KEY}"
+DD_APP_KEY_REF="${DD_APP_KEY_REF:-op://Employee/DATADOG_API/DD_APP_KEY}"
 
-# Load the secrets file into this script's environment, then forward only the
-# Datadog keys by NAME (-e NAME), so values never appear on the command line.
-set -a
-# shellcheck disable=SC1090
-. "$SECRETS_FILE"
-set +a
+if command -v op >/dev/null 2>&1; then
+  OP_BIN="op"
+elif command -v op.exe >/dev/null 2>&1; then
+  # WSL: 1Password CLI is only installed on the Windows side. `op.exe run`
+  # would exec the child process in Windows, not WSL, so it can't be used
+  # to wrap `docker run` — instead just read the two secret values with it.
+  OP_BIN="op.exe"
+else
+  echo "dd-mcp-proxy: 1Password CLI ('op' or 'op.exe') not found in PATH" >&2
+  exit 1
+fi
 
-: "${DD_API_KEY:?dd-mcp-proxy: DD_API_KEY not set in $SECRETS_FILE}"
-: "${DD_APP_KEY:?dd-mcp-proxy: DD_APP_KEY not set in $SECRETS_FILE}"
+DD_API_KEY="$("$OP_BIN" read "$DD_API_KEY_REF")"
+DD_APP_KEY="$("$OP_BIN" read "$DD_APP_KEY_REF")"
+export DD_API_KEY DD_APP_KEY
 
 exec docker run --rm -i \
   --env DD_API_KEY \
   --env DD_APP_KEY \
+  --sysctl net.ipv6.conf.all.disable_ipv6=1 \
+  --sysctl net.ipv6.conf.default.disable_ipv6=1 \
   --read-only \
   --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   --cap-drop=ALL \
