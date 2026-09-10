@@ -26,8 +26,24 @@ else
   exit 1
 fi
 
-DD_API_KEY="$("$OP_BIN" read "$DD_API_KEY_REF")"
-DD_APP_KEY="$("$OP_BIN" read "$DD_APP_KEY_REF")"
+# The desktop-app integration `op.exe` talks to over IPC is intermittently
+# flaky (transient 504s from its local client), so retry a few times before
+# giving up.
+op_read_retry() {
+  local ref="$1" attempt out
+  for attempt in 1 2 3; do
+    if out="$("$OP_BIN" read "$ref" 2>&1)"; then
+      printf '%s' "$out"
+      return 0
+    fi
+    echo "dd-mcp-proxy: op read failed (attempt $attempt/3) for $ref: $out" >&2
+    sleep 1
+  done
+  return 1
+}
+
+DD_API_KEY="$(op_read_retry "$DD_API_KEY_REF")"
+DD_APP_KEY="$(op_read_retry "$DD_APP_KEY_REF")"
 export DD_API_KEY DD_APP_KEY
 
 exec docker run --rm -i \
