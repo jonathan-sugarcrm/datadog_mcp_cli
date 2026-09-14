@@ -35,21 +35,29 @@ fi
 # forever for a message that already got consumed. This was the actual
 # cause of every MCP connect timeout — not Docker, 1Password speed, IPv6,
 # or pids-limit.
-op_read_retry() {
-  local ref="$1" attempt out
+#
+# Both keys are fetched in a single `op inject` call rather than two
+# separate `op read` calls, so a launch costs one round trip to the
+# secrets provider instead of two (up to one retried call of 3 attempts
+# instead of two).
+op_inject_retry() {
+  local attempt out
+  local template="DD_API_KEY=${DD_API_KEY_REF}
+DD_APP_KEY=${DD_APP_KEY_REF}"
   for attempt in 1 2 3; do
-    if out="$("$OP_BIN" read "$ref" </dev/null 2>&1)"; then
+    if out="$("$OP_BIN" inject 2>/dev/null <<<"$template")"; then
       printf '%s' "$out"
       return 0
     fi
-    echo "dd-mcp-proxy: op read failed (attempt $attempt/3) for $ref: $out" >&2
+    echo "dd-mcp-proxy: op inject failed (attempt $attempt/3)" >&2
     sleep 1
   done
   return 1
 }
 
-DD_API_KEY="$(op_read_retry "$DD_API_KEY_REF")"
-DD_APP_KEY="$(op_read_retry "$DD_APP_KEY_REF")"
+injected="$(op_inject_retry)"
+DD_API_KEY="$(printf '%s\n' "$injected" | sed -n 's/^DD_API_KEY=//p')"
+DD_APP_KEY="$(printf '%s\n' "$injected" | sed -n 's/^DD_APP_KEY=//p')"
 export DD_API_KEY DD_APP_KEY
 
 exec docker run --rm -i \
