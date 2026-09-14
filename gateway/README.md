@@ -41,6 +41,31 @@ This is a multi-stage build:
 
 `docker build` exits `0` and leaves you a runnable, tagged image on success.
 
+## Running as a shared local daemon (avoids per-session 1Password fetches)
+
+If every MCP client on a machine currently launches `dd-mcp-proxy.sh` (or a
+`docker run ... datadog_mcp_cli` command) as its own subprocess, each one
+re-fetches `DD_API_KEY`/`DD_APP_KEY` from 1Password on every launch. The
+repo-root `dd-mcp-gateway-daemon.sh` script starts this gateway once, in
+HTTP mode, as a single background container that all local clients share —
+1Password is hit once, at daemon start, not once per client session.
+
+```sh
+./dd-mcp-gateway-daemon.sh start     # fetches secrets once, starts the daemon
+./dd-mcp-gateway-daemon.sh status
+./dd-mcp-gateway-daemon.sh restart   # re-fetches secrets, replaces the container
+./dd-mcp-gateway-daemon.sh stop
+```
+
+It generates a shared bearer token at `~/.secrets/dd-mcp-gateway.key` (reused
+across restarts) and prints it. Export it and point every client's MCP
+config at the daemon instead of a launched subprocess — see
+`mcp-datadog-gateway.example.json`:
+
+```sh
+export DD_MCP_GATEWAY_KEY="$(cat ~/.secrets/dd-mcp-gateway.key)"
+```
+
 ## Running locally over stdio
 
 Local/Docker mode is the default transport (`MCP_TRANSPORT` unset, or
