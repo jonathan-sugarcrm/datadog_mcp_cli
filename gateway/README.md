@@ -50,21 +50,29 @@ repo-root `dd-mcp-gateway-daemon.sh` script starts this gateway once, in
 HTTP mode, as a single background container that all local clients share —
 1Password is hit once, at daemon start, not once per client session.
 
+You never need to run it manually: point every client's MCP config at
+`mcp-datadog-gateway.example.json`'s `headersHelper`
+(`dd-mcp-gateway-headers.sh`) instead of launching a subprocess. Claude Code
+runs that helper on every connection attempt, and it calls
+`dd-mcp-gateway-daemon.sh start` itself — bootstrapping the container (and
+paying the one 1Password fetch) only the first time, then just probing
+`docker ps` and returning immediately on every connection after that,
+whether it's a reconnect of the same client or a brand new Claude instance
+finding the daemon already up.
+
+The daemon script is also usable directly if you want to manage the
+container's lifecycle yourself:
+
 ```sh
-./dd-mcp-gateway-daemon.sh start     # fetches secrets once, starts the daemon
+./dd-mcp-gateway-daemon.sh start     # bootstraps: fetches secrets once, starts the daemon
 ./dd-mcp-gateway-daemon.sh status
 ./dd-mcp-gateway-daemon.sh restart   # re-fetches secrets, replaces the container
 ./dd-mcp-gateway-daemon.sh stop
 ```
 
-It generates a shared bearer token at `~/.secrets/dd-mcp-gateway.key` (reused
-across restarts) and prints it. Export it and point every client's MCP
-config at the daemon instead of a launched subprocess — see
-`mcp-datadog-gateway.example.json`:
-
-```sh
-export DD_MCP_GATEWAY_KEY="$(cat ~/.secrets/dd-mcp-gateway.key)"
-```
+It generates a shared bearer token at `~/.secrets/dd-mcp-gateway.key`
+(reused across restarts, read fresh by the headers helper on every
+connection).
 
 ## Running locally over stdio
 

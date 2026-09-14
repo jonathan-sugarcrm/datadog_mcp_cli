@@ -3,9 +3,7 @@
     "datadog": {
       "type": "http",
       "url": "http://127.0.0.1:8791/mcp",
-      "headers": {
-        "Authorization": "Bearer ${DD_MCP_GATEWAY_KEY}"
-      }
+      "headersHelper": "/home/jrawlinson/datadog_mcp_cli/dd-mcp-gateway-headers.sh"
     }
   }
 }
