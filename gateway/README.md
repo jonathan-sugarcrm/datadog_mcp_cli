@@ -41,6 +41,39 @@ This is a multi-stage build:
 
 `docker build` exits `0` and leaves you a runnable, tagged image on success.
 
+## Running as a shared local daemon (avoids per-session 1Password fetches)
+
+If every MCP client on a machine currently launches `dd-mcp-proxy.sh` (or a
+`docker run ... datadog_mcp_cli` command) as its own subprocess, each one
+re-fetches `DD_API_KEY`/`DD_APP_KEY` from 1Password on every launch. The
+repo-root `dd-mcp-gateway-daemon.sh` script starts this gateway once, in
+HTTP mode, as a single background container that all local clients share —
+1Password is hit once, at daemon start, not once per client session.
+
+You never need to run it manually: point every client's MCP config at
+`mcp-datadog-gateway.example.json`'s `headersHelper`
+(`dd-mcp-gateway-headers.sh`) instead of launching a subprocess. Claude Code
+runs that helper on every connection attempt, and it calls
+`dd-mcp-gateway-daemon.sh start` itself — bootstrapping the container (and
+paying the one 1Password fetch) only the first time, then just probing
+`docker ps` and returning immediately on every connection after that,
+whether it's a reconnect of the same client or a brand new Claude instance
+finding the daemon already up.
+
+The daemon script is also usable directly if you want to manage the
+container's lifecycle yourself:
+
+```sh
+./dd-mcp-gateway-daemon.sh start     # bootstraps: fetches secrets once, starts the daemon
+./dd-mcp-gateway-daemon.sh status
+./dd-mcp-gateway-daemon.sh restart   # re-fetches secrets, replaces the container
+./dd-mcp-gateway-daemon.sh stop
+```
+
+It generates a shared bearer token at `~/.secrets/dd-mcp-gateway.key`
+(reused across restarts, read fresh by the headers helper on every
+connection).
+
 ## Running locally over stdio
 
 Local/Docker mode is the default transport (`MCP_TRANSPORT` unset, or
