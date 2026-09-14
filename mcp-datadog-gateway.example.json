@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "datadog": {
-      "type": "http",
-      "url": "http://127.0.0.1:8791/mcp",
-      "headersHelper": "/home/jrawlinson/.repositories/jonathan-sugarcrm/datadog_mcp_cli/dd-mcp-gateway-headers.sh"
+      "command": "/home/jrawlinson/.repositories/jonathan-sugarcrm/datadog_mcp_cli/dd-mcp-gateway-stdio.sh",
+      "args": []
     }
   }
 }

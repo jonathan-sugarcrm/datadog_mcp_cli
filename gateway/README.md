@@ -51,14 +51,22 @@ HTTP mode, as a single background container that all local clients share —
 1Password is hit once, at daemon start, not once per client session.
 
 You never need to run it manually: point every client's MCP config at
-`mcp-datadog-gateway.example.json`'s `headersHelper`
-(`dd-mcp-gateway-headers.sh`) instead of launching a subprocess. Claude Code
-runs that helper on every connection attempt, and it calls
+`mcp-datadog-gateway.example.json`, which launches
+`dd-mcp-gateway-stdio.sh` as an ordinary stdio server. That script calls
 `dd-mcp-gateway-daemon.sh start` itself — bootstrapping the container (and
 paying the one 1Password fetch) only the first time, then just probing
-`docker ps` and returning immediately on every connection after that,
-whether it's a reconnect of the same client or a brand new Claude instance
-finding the daemon already up.
+`docker ps` and returning immediately on every launch after that, whether
+it's a reconnect of the same client or a brand new Claude instance finding
+the daemon already up — before bridging its stdio to the daemon's HTTP
+endpoint with `mcp-remote` (bearer token passed via `--header-file`, never
+on the command line).
+
+Why stdio and not a plain `"type": "http"` entry pointed straight at the
+daemon: Claude Code's HTTP transport always attempts OAuth Dynamic Client
+Registration on the first request, even when only `headersHelper` is
+configured for plain bearer auth (upstream gap, not something to fix here —
+see anthropics/claude-code#3273 and #26675). `dd-mcp-gateway-headers.sh` is
+kept in the repo for clients that don't have that limitation.
 
 The daemon script is also usable directly if you want to manage the
 container's lifecycle yourself:
